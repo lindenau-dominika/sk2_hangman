@@ -15,10 +15,9 @@
 #include <chrono>
 
 // TODO
-// flagi u clienta
 // wysylanie bledow ze strony serwera
 // testowanie do wykrycia bledow
-// 
+// mutex przy nickname
 
 const int max_tries = 7;
 const int port = 8080;
@@ -78,23 +77,29 @@ void handleClient(int client_socket, std::string word, std::vector<int> &sockets
     std::cout << Players.size() << std::endl;
     send(client_socket, conn_accepted.c_str(), conn_accepted.length(), 0);
 
-    while (find(Players.begin(), Players.end(), nickname) != Players.end())
-    {
-        std::cout << "Provided nickname: " << nickname << " has already been taken" << std::endl;
-        std::string nickname_taken = "Nickname already taken. Enter a different nickname: ";
-        send(client_socket, nickname_taken.c_str(), nickname_taken.length(), 0);
-        read_value = recv(client_socket, buffer, buffer_size, 0);
-        nickname = std::string(buffer, read_value);
-    }
-    Players.push_back(nickname);
-    std::cout << Players.size() << std::endl;
+    
 
-    std::string lobby = "Lobby:\n";
-    for (int i = 0; i < Players.size(); i++)
+    while (true)
     {
-        lobby = lobby + Players[i] + "\n";
+        nicknameMutex.lock();
+        bool nickname_found = find(Players.begin(), Players.end(), nickname) != Players.end();
+        nicknameMutex.unlock();
+        if (nickname_found)
+        {
+            std::cout << "Provided nickname: " << nickname << " has already been taken" << std::endl;
+            std::string nickname_taken = "Nickname already taken. Enter a different nickname: ";
+            send(client_socket, nickname_taken.c_str(), nickname_taken.length(), 0);
+            read_value = recv(client_socket, buffer, buffer_size, 0);
+            nickname = std::string(buffer, read_value);
+        }
+        else
+        {
+            nicknameMutex.lock();
+            Players.push_back(nickname);
+            nicknameMutex.unlock();
+            break;
+        }
     }
-    send(client_socket, lobby.c_str(), lobby.length(), 0);
 
     int numTries = 0;
     std::string guessedLetters;
@@ -136,9 +141,8 @@ void handleClient(int client_socket, std::string word, std::vector<int> &sockets
                 x = starter;
             }
         }
-        std::cout << "decider: " << decider << std::endl;
     }
-    std::cout << "starter: " << starter << std::endl;
+
     // if (Players.size() > 0)
     // {
     //     std::string lobby = "Lobby:\n";
@@ -147,55 +151,52 @@ void handleClient(int client_socket, std::string word, std::vector<int> &sockets
     //         lobby = lobby + Players[i] + "\n";
     //     }
     //     send(client_socket, lobby.c_str(), lobby.length(), 0);
-    std::cout <<"socketsize: " << sockets.size() << std::endl;
-    std::cout <<"socket_1: " << sockets[0] << std::endl;
-    std::cout <<"socket_2: " << sockets[1] << std::endl;
 
-        while (numTries < max_tries && hiddenWord != word && starter == 1)
+    while (numTries < max_tries && hiddenWord != word && starter == 1)
+    {
+        std::string Game_started = "\nGame Started\n";
+        send(client_socket, Game_started.c_str(), Game_started.length(), 0);
+        // Current status
+        std::string message = "Current word: " + hiddenWord + "\nGuessed letters: " + guessedLetters;
+        send(client_socket, message.c_str(), message.length(), 0);
+
+        // Receive a letter from the player
+        read_value = recv(client_socket, buffer, buffer_size, 0);
+        char letter = buffer[0];
+
+        // Check if the letter has already been guessed
+        if (guessedLetters.find(letter) != std::string::npos)
         {
-            std::string Game_started = "\nGame Started\n";
-            send(client_socket, Game_started.c_str(), Game_started.length(), 0);
-            // Current status
-            std::string message = "Current word: " + hiddenWord + "\nGuessed letters: " + guessedLetters;
-            send(client_socket, message.c_str(), message.length(), 0);
+            std::string mess = "You already guessed that letter.\n";
+            send(client_socket, mess.c_str(), mess.length(), 0);
+        }
+        else
+        {
+            // Add the letter to guessed
+            guessedLetters += letter;
 
-            // Receive a letter from the player
-            read_value = recv(client_socket, buffer, buffer_size, 0);
-            char letter = buffer[0];
-
-            // Check if the letter has already been guessed
-            if (guessedLetters.find(letter) != std::string::npos)
+            // Check if the letter is in the word
+            if (word.find(letter) != std::string::npos)
             {
-                std::string mess = "You already guessed that letter.\n";
-                send(client_socket, mess.c_str(), mess.length(), 0);
-            }
-            else
-            {
-                // Add the letter to guessed
-                guessedLetters += letter;
-
-                // Check if the letter is in the word
-                if (word.find(letter) != std::string::npos)
+                for (int i = 0; i < word.length(); i++)
                 {
-                    for (int i = 0; i < word.length(); i++)
+                    if (word[i] == letter)
                     {
-                        if (word[i] == letter)
+                        hiddenWord[i] = letter;
+                        if (hiddenWord == word)
                         {
-                            hiddenWord[i] = letter;
-                            if (hiddenWord == word)
-                            {
-                                break;
-                            }
+                            break;
                         }
                     }
                 }
-                else
-                {
-                    // Increment tries
-                    numTries++;
-                }
+            }
+            else
+            {
+                // Increment tries
+                numTries++;
             }
         }
+    }
     // Sending the final sttatust of the game to the player
     if (numTries == max_tries)
     {
@@ -280,7 +281,7 @@ int main(int argc, char **argv)
 
     std::vector<int> sockets;
     int starter = 0;
-    
+
     while (true)
     {
         std::cout << "Waiting for connection...\n";
@@ -299,10 +300,10 @@ int main(int argc, char **argv)
         std::thread t(handleClient, new_socket, word, std::ref(sockets), std::ref(starter));
         t.detach();
         while (cv.wait_for(lck, std::chrono::seconds(5)) == std::cv_status::no_timeout)
-            {
-                std::cout << "Waiting for other players" << std::endl;
-                starter = 1;
-            }
+        {
+            std::cout << "Waiting for other players" << std::endl;
+            starter = 1;
+        }
     }
 
     return 0;
