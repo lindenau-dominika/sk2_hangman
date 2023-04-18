@@ -13,11 +13,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <chrono>
-
-// TODO
-// wysylanie bledow ze strony serwera
-// testowanie do wykrycia bledow
-// mutex przy nickname
+#include <signal.h>
 
 const int max_tries = 7;
 const int port = 8080;
@@ -66,7 +62,6 @@ std::mutex loggingMutex;
 void handleClient(int client_socket, std::string word, std::vector<int> &sockets, int &starter)
 {
     // int starter;
-    int starter2;
     char buffer[buffer_size] = {0};
     std::string decider;
 
@@ -77,8 +72,6 @@ void handleClient(int client_socket, std::string word, std::vector<int> &sockets
     std::cout << Players.size() << std::endl;
     send(client_socket, conn_accepted.c_str(), conn_accepted.length(), 0);
 
-    
-
     while (true)
     {
         nicknameMutex.lock();
@@ -88,7 +81,7 @@ void handleClient(int client_socket, std::string word, std::vector<int> &sockets
         {
             std::cout << "Provided nickname: " << nickname << " has already been taken" << std::endl;
             std::string nickname_taken = "Nickname already taken. Enter a different nickname: ";
-            send(client_socket, nickname_taken.c_str(), nickname_taken.length(), 0);
+            send(client_socket, nickname_taken.c_str(), nickname_taken.length(), MSG_NOSIGNAL);
             read_value = recv(client_socket, buffer, buffer_size, 0);
             nickname = std::string(buffer, read_value);
         }
@@ -117,17 +110,27 @@ void handleClient(int client_socket, std::string word, std::vector<int> &sockets
             std::string trigger = "Do you want to start the game?[Y/n]";
             send(client_socket, trigger.c_str(), trigger.length(), 0);
             std::cout << "Asking the player to start the game" << std::endl;
-            read_value = recv(client_socket, buffer, buffer_size, 0);
-            std::string decider(buffer, read_value);
             std::cout << decider << std::endl;
-            if (decider == "Y")
+            while (decider != "Y")
             {
-                starter = 1;
-                cv.notify_one();
-            }
-            else
-            {
-                starter = 0;
+                read_value = recv(client_socket, buffer, buffer_size, 0);
+                std::string decider(buffer, read_value);
+
+                if (decider == "Y")
+                {
+                    starter = 1;
+                    cv.notify_one();
+                    break;
+                }
+                else
+                {
+                    starter = 0;
+                    for (int x = 0; x < Players.size(); x++)
+                    {
+                        std::cout << Players[x] << std::endl;
+                    }
+                    send(client_socket, trigger.c_str(), trigger.length(), MSG_NOSIGNAL);
+                }
             }
         }
 
@@ -143,32 +146,34 @@ void handleClient(int client_socket, std::string word, std::vector<int> &sockets
         }
     }
 
-    // if (Players.size() > 0)
-    // {
-    //     std::string lobby = "Lobby:\n";
-    //     for (int i = 0; i < Players.size(); i++)
-    //     {
-    //         lobby = lobby + Players[i] + "\n";
-    //     }
-    //     send(client_socket, lobby.c_str(), lobby.length(), 0);
-
     while (numTries < max_tries && hiddenWord != word && starter == 1)
     {
         std::string Game_started = "\nGame Started\n";
-        send(client_socket, Game_started.c_str(), Game_started.length(), 0);
+        send(client_socket, Game_started.c_str(), Game_started.length(), MSG_NOSIGNAL);
         // Current status
+
         std::string message = "Current word: " + hiddenWord + "\nGuessed letters: " + guessedLetters;
-        send(client_socket, message.c_str(), message.length(), 0);
+        send(client_socket, message.c_str(), message.length(), MSG_NOSIGNAL);
 
         // Receive a letter from the player
+
         read_value = recv(client_socket, buffer, buffer_size, 0);
+        if (read_value == 0)
+        {
+            nicknameMutex.lock();
+            auto x = find(Players.begin(), Players.end(), nickname);
+            std::cout << &*Players.end() << " " << &*x << std::endl;
+            Players.erase(x);
+            nicknameMutex.unlock();
+            break;
+        }
         char letter = buffer[0];
 
         // Check if the letter has already been guessed
         if (guessedLetters.find(letter) != std::string::npos)
         {
             std::string mess = "You already guessed that letter.\n";
-            send(client_socket, mess.c_str(), mess.length(), 0);
+            send(client_socket, mess.c_str(), mess.length(), MSG_NOSIGNAL);
         }
         else
         {
@@ -208,9 +213,18 @@ void handleClient(int client_socket, std::string word, std::vector<int> &sockets
         std::string win = "You won! The word was: " + word;
         send(client_socket, win.c_str(), win.length(), 0);
     }
-    Players.erase(find(Players.begin(), Players.end(), nickname));
+
+    nicknameMutex.lock();
+    bool nickname_not_erased = find(Players.begin(), Players.end(), nickname) != Players.end();
+
+    if (nickname_not_erased)
+    {
+        auto x = find(Players.begin(), Players.end(), nickname);
+        Players.erase(x);
+    }
+    nicknameMutex.unlock();
+
     close(client_socket);
-    // }
 }
 
 int main(int argc, char **argv)
@@ -294,12 +308,12 @@ int main(int argc, char **argv)
         }
         loggingMutex.lock();
         sockets.push_back(new_socket);
-
         loggingMutex.unlock();
+        
         // create new thread to handle the client
         std::thread t(handleClient, new_socket, word, std::ref(sockets), std::ref(starter));
         t.detach();
-        while (cv.wait_for(lck, std::chrono::seconds(5)) == std::cv_status::no_timeout)
+        while (cv.wait_for(lck, std::chrono::seconds(10)) == std::cv_status::no_timeout)
         {
             std::cout << "Waiting for other players" << std::endl;
             starter = 1;

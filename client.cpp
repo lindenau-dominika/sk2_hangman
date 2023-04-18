@@ -65,6 +65,8 @@ int main(int argc, char **argv)
     }
 
     // send nickanme to the server
+    char xd = 3;
+    send(sock, &xd, 1, 0);
     send(sock, nickname.c_str(), nickname.length(), 0);
 
     // start the game
@@ -97,12 +99,13 @@ int main(int argc, char **argv)
         };
 
         // get user input
-        if (strstr(buffer, "Game Started"))
+        if (strstr(buffer, "Current word"))
         {
             std::string guess;
             std::cout << "Enter a guess: ";
             std::cin >> guess;
             // send the guess to server
+            send(sock, &xd, 1, 0);
             send(sock, guess.c_str(), guess.length(), 0);
         }
     }
