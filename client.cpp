@@ -33,6 +33,8 @@ int main(int argc, char **argv)
             port = std::stoi(argv[i]);
         }
     }
+    std::cout << argc << std::endl;
+
     std::cout <<"ip: " << ip << " PORT: " << port << std::endl;
     // Get nickname
     std::string nickname;
@@ -52,7 +54,7 @@ int main(int argc, char **argv)
     server_addr.sin_port = htons(port);
 
     // Convert ipv4 and ipv6 addresses from text to binary
-    if (inet_pton(AF_INET, "127.0.0.1", &server_addr.sin_addr) <= 0)
+    if (inet_pton(AF_INET, ip.c_str(), &server_addr.sin_addr) <= 0)
     {
         std::cout << "invalid address.\n";
         return -1;
@@ -65,8 +67,6 @@ int main(int argc, char **argv)
     }
 
     // send nickanme to the server
-    char xd = 3;
-    send(sock, &xd, 1, 0);
     send(sock, nickname.c_str(), nickname.length(), 0);
 
     // start the game

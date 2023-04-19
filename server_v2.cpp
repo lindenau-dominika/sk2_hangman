@@ -69,7 +69,6 @@ void handleClient(int client_socket, std::string word, std::vector<int> &sockets
     std::string nickname(buffer, read_value);
     std::string conn_accepted = "Connection accepted!\n\n";
     std::cout << "Connection accepted from: " << nickname << std::endl;
-    std::cout << Players.size() << std::endl;
     send(client_socket, conn_accepted.c_str(), conn_accepted.length(), 0);
 
     while (true)
@@ -125,10 +124,10 @@ void handleClient(int client_socket, std::string word, std::vector<int> &sockets
                 else
                 {
                     starter = 0;
-                    for (int x = 0; x < Players.size(); x++)
-                    {
-                        std::cout << Players[x] << std::endl;
-                    }
+                    // for (int x = 0; x < Players.size(); x++)
+                    // {
+                    //     std::cout << Players[x] << std::endl;
+                    // }
                     send(client_socket, trigger.c_str(), trigger.length(), MSG_NOSIGNAL);
                 }
             }
@@ -162,7 +161,6 @@ void handleClient(int client_socket, std::string word, std::vector<int> &sockets
         {
             nicknameMutex.lock();
             auto x = find(Players.begin(), Players.end(), nickname);
-            std::cout << &*Players.end() << " " << &*x << std::endl;
             Players.erase(x);
             nicknameMutex.unlock();
             break;
@@ -237,6 +235,7 @@ int main(int argc, char **argv)
     int opt = 1;
     int addrlen = sizeof(address);
     char buffer[1024] = {0};
+    const char* ip2;
 
     for (int i = 1; i < argc - 1; i++)
     {
@@ -245,6 +244,7 @@ int main(int argc, char **argv)
         {
             i++;
             ip = argv[i];
+            ip2 = ip.c_str();
         }
 
         if (arg == "-port")
@@ -254,7 +254,7 @@ int main(int argc, char **argv)
         }
     }
 
-    std::cout << "ip: " << ip << " PORT: " << port << std::endl;
+    std::cout << ip2 << "ip: " << ip << " PORT: " << port << std::endl;
 
     std::vector<std::string> words = readWordsFromFile("words.txt");
     std::cout << "File with " << words.size() << " clues has been loaded." << std::endl;
